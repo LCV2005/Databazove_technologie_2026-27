@@ -18,7 +18,6 @@ FROM retail_sales
 WHERE customer_id IS NOT NULL
 ORDER BY customer_id, invoice_date;
 
-B
 
 3)
 
@@ -103,8 +102,156 @@ WHERE previous_price IS NOT NULL
 ORDER BY invoice_date ASC;
 
 6)
+
+WITH customer_sales AS (
+    SELECT
+        customer_id,
+        SUM(quantity * unit_price) AS total_amount
+    FROM retail_sales
+    WHERE customer_id IS NOT NULL
+    GROUP BY customer_id
+)
+SELECT
+    customer_id,
+    total_amount,
+    NTILE(4) OVER (ORDER BY total_amount DESC) AS sales_quartile
+FROM customer_sales
+ORDER BY total_amount DESC;
+
 7)
+
+WITH monthly_sales AS (
+    SELECT
+        country,
+        DATE_TRUNC('month', invoice_date) AS month,
+        SUM(quantity * unit_price) AS total_amount
+    FROM retail_sales
+    GROUP BY country, DATE_TRUNC('month', invoice_date)
+)
+SELECT
+    country,
+    month,
+    total_amount,
+    NTILE(4) OVER (
+        PARTITION BY country 
+        ORDER BY total_amount DESC
+    ) AS sales_quartile
+FROM monthly_sales
+ORDER BY country ASC, month ASC;
+
 8)
+
+WITH ranked_purchases AS (
+    SELECT
+        customer_id,
+        invoice_no,
+        invoice_date,
+        stock_code,
+        description,
+        quantity,
+        unit_price,
+        ROW_NUMBER() OVER (
+            PARTITION BY customer_id 
+            ORDER BY invoice_date ASC
+        ) AS rn
+    FROM retail_sales
+)
+SELECT
+    customer_id,
+    invoice_no,
+    invoice_date,
+    stock_code,
+    description,
+    quantity,
+    unit_price
+FROM ranked_purchases
+WHERE rn = 1
+ORDER BY customer_id ASC;
+
 9)
+
+WITH ranked_items AS (
+    SELECT
+        invoice_no,
+        stock_code,
+        description,
+        quantity,
+        unit_price,
+        (quantity * unit_price) AS amount,
+        ROW_NUMBER() OVER (
+            PARTITION BY invoice_no 
+            ORDER BY (quantity * unit_price) DESC
+        ) AS row_num
+    FROM retail_sales
+)
+SELECT
+    invoice_no,
+    stock_code,
+    description,
+    quantity,
+    unit_price,
+    amount,
+    row_num
+FROM ranked_items
+WHERE row_num <= 3
+ORDER BY invoice_no ASC, row_num ASC;
+
 10)
+
+WITH customer_monthly_sales AS (
+    SELECT
+        country,
+        DATE_TRUNC('month', invoice_date) AS month,
+        customer_id,
+        SUM(quantity * unit_price) AS total_amount
+    FROM retail_sales
+    WHERE customer_id IS NOT NULL
+    GROUP BY country, DATE_TRUNC('month', invoice_date), customer_id
+),
+ranked_customers AS (
+    SELECT
+        country,
+        month,
+        customer_id,
+        total_amount,
+        DENSE_RANK() OVER (
+            PARTITION BY country, month 
+            ORDER BY total_amount DESC
+        ) AS sales_rank
+    FROM customer_monthly_sales
+)
+SELECT
+    country,
+    month,
+    customer_id,
+    total_amount,
+    sales_rank
+FROM ranked_customers
+WHERE sales_rank <= 5
+ORDER BY country ASC, month ASC, sales_rank ASC, customer_id ASC;
+
 11)
+
+WITH ranked_items AS (
+    SELECT
+        invoice_no,
+        stock_code,
+        description,
+        quantity,
+        unit_price,
+        DENSE_RANK() OVER (
+            PARTITION BY invoice_no 
+            ORDER BY unit_price DESC
+        ) AS price_rank
+    FROM retail_sales
+)
+SELECT
+    invoice_no,
+    stock_code,
+    description,
+    quantity,
+    unit_price,
+    price_rank
+FROM ranked_items
+WHERE price_rank <= 5
+ORDER BY invoice_no ASC, price_rank ASC, stock_code ASC;
